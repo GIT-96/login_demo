@@ -1,0 +1,66 @@
+name: Build GIT Camera Viewer APK
+
+on:
+  push:
+    branches:
+      - build-git-camera-webview-apk
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.7'
+          channel: stable
+          cache: true
+
+      - name: Create Android project files
+        working-directory: camera_webview_source
+        run: |
+          flutter create --platforms=android --project-name git_camera_viewer --org com.git .
+
+      - name: Allow LAN HTTP and Internet
+        working-directory: camera_webview_source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          text = p.read_text(encoding='utf-8')
+          if 'android.permission.INTERNET' not in text:
+              text = text.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />')
+          text = text.replace('<application', '<application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config"', 1)
+          p.write_text(text, encoding='utf-8')
+
+          xml = Path('android/app/src/main/res/xml')
+          xml.mkdir(parents=True, exist_ok=True)
+          (xml / 'network_security_config.xml').write_text('''<?xml version="1.0" encoding="utf-8"?>\n<network-security-config>\n    <base-config cleartextTrafficPermitted="true" />\n</network-security-config>\n''', encoding='utf-8')
+          PY
+
+      - name: Get dependencies
+        working-directory: camera_webview_source
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: camera_webview_source
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: |
+          cp camera_webview_source/build/app/outputs/flutter-apk/app-release.apk GIT-Camera-Viewer-v1.0.0.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GIT-Camera-Viewer-v1.0.0
+          path: GIT-Camera-Viewer-v1.0.0.apk
+          if-no-files-found: error
