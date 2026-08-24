@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -41,6 +42,127 @@ class _CameraWebViewPageState extends State<CameraWebViewPage> {
   int _progress = 0;
   bool _hasError = false;
 
+  static const String _mobileScrollFixJs = r'''
+(() => {
+  const STYLE_ID = 'git-android-webview-scroll-fix';
+
+  let style = document.getElementById(STYLE_ID);
+  if (!style) {
+    style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      html,
+      body {
+        width: 100% !important;
+        min-height: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior-y: auto !important;
+        touch-action: pan-y pinch-zoom !important;
+        -webkit-overflow-scrolling: touch !important;
+      }
+
+      body {
+        position: static !important;
+      }
+
+      .page,
+      .main,
+      .app-main,
+      .git-main,
+      .page-inner,
+      .content,
+      .page-content,
+      .dashboard-content,
+      .dashboard-page,
+      .live-page,
+      .live-content,
+      .playback-page,
+      .playback-content,
+      .library-page,
+      .alerts-page,
+      .settings-page,
+      .settings-layout,
+      .ai-page,
+      .ai-layout,
+      .assistant-page,
+      .assistant-layout,
+      .assistant-grid {
+        min-height: 0 !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow-y: visible !important;
+      }
+
+      .table-wrap,
+      .table-card,
+      .channel-table-wrap {
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+      }
+
+      dialog,
+      .modal,
+      .modal-card,
+      .dialog {
+        max-height: 88dvh !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+      }
+    `;
+    document.head.appendChild(style);
+  } else {
+    document.head.appendChild(style);
+  }
+
+  const forceScrollable = (el) => {
+    if (!el) return;
+    el.style.setProperty('height', 'auto', 'important');
+    el.style.setProperty('max-height', 'none', 'important');
+    el.style.setProperty('overflow-y', 'auto', 'important');
+    el.style.setProperty('-webkit-overflow-scrolling', 'touch', 'important');
+  };
+
+  document.documentElement.style.setProperty('height', 'auto', 'important');
+  document.documentElement.style.setProperty('min-height', '100%', 'important');
+  document.documentElement.style.setProperty('max-height', 'none', 'important');
+  document.documentElement.style.setProperty('overflow-y', 'auto', 'important');
+  document.documentElement.style.setProperty('overflow-x', 'hidden', 'important');
+  document.documentElement.style.setProperty('touch-action', 'pan-y pinch-zoom', 'important');
+
+  document.body.style.setProperty('height', 'auto', 'important');
+  document.body.style.setProperty('min-height', '100%', 'important');
+  document.body.style.setProperty('max-height', 'none', 'important');
+  document.body.style.setProperty('overflow-y', 'auto', 'important');
+  document.body.style.setProperty('overflow-x', 'hidden', 'important');
+  document.body.style.setProperty('position', 'static', 'important');
+  document.body.style.setProperty('touch-action', 'pan-y pinch-zoom', 'important');
+
+  const candidates = document.querySelectorAll(
+    '.page, .main, .app-main, .git-main, .page-inner, .content, .page-content, ' +
+    '.dashboard-content, .dashboard-page, .live-page, .live-content, ' +
+    '.playback-page, .playback-content, .library-page, .alerts-page, ' +
+    '.settings-page, .settings-layout, .ai-page, .ai-layout, ' +
+    '.assistant-page, .assistant-layout, .assistant-grid'
+  );
+
+  candidates.forEach((el) => {
+    el.style.setProperty('height', 'auto', 'important');
+    el.style.setProperty('max-height', 'none', 'important');
+    el.style.setProperty('overflow-y', 'visible', 'important');
+    el.style.setProperty('min-height', '0', 'important');
+  });
+
+  forceScrollable(document.scrollingElement);
+
+  window.dispatchEvent(new Event('resize'));
+  return true;
+})();
+''';
+
   @override
   void initState() {
     super.initState();
@@ -61,9 +183,26 @@ class _CameraWebViewPageState extends State<CameraWebViewPage> {
               _progress = 0;
             });
           },
-          onPageFinished: (_) {
+          onPageFinished: (_) async {
             if (!mounted) return;
             setState(() => _progress = 100);
+
+            await _applyMobileScrollFix();
+
+            // Một số trang Camera Center dựng shell/layout sau onPageFinished.
+            // Áp lại để CSS/JS của trang không khóa body sau đó.
+            unawaited(
+              Future<void>.delayed(
+                const Duration(milliseconds: 500),
+                _applyMobileScrollFix,
+              ),
+            );
+            unawaited(
+              Future<void>.delayed(
+                const Duration(milliseconds: 1500),
+                _applyMobileScrollFix,
+              ),
+            );
           },
           onWebResourceError: (error) {
             if (error.isForMainFrame != true) return;
@@ -74,6 +213,14 @@ class _CameraWebViewPageState extends State<CameraWebViewPage> {
         ),
       )
       ..loadRequest(Uri.parse(cameraCenterUrl));
+  }
+
+  Future<void> _applyMobileScrollFix() async {
+    try {
+      await _controller.runJavaScript(_mobileScrollFixJs);
+    } catch (_) {
+      // Không làm gián đoạn WebView nếu trang đang chuyển route/reload.
+    }
   }
 
   Future<bool> _handleBack() async {
