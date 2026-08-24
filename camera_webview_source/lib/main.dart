@@ -66,7 +66,7 @@ class _CameraWebViewPageState extends State<CameraWebViewPage> {
             setState(() => _progress = 100);
           },
           onWebResourceError: (error) {
-            if (!error.isForMainFrame) return;
+            if (error.isForMainFrame != true) return;
             if (!mounted) return;
             setState(() => _hasError = true);
           },
