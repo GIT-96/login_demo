@@ -1,7 +1,7 @@
 name: git_camera_viewer
 description: Minimal Android WebView wrapper for GIT Camera Center.
 publish_to: "none"
-version: 1.0.0+1
+version: 1.1.0+3
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   webview_flutter: 4.10.0
+  shared_preferences: 2.5.3
 
 dev_dependencies:
   flutter_test:
