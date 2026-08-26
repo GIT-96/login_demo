@@ -29,30 +29,60 @@ jobs:
         run: |
           flutter create --platforms=android --project-name git_camera_viewer --org com.git .
 
-      - name: Allow LAN HTTP and Internet
+      - name: Configure Android network and custom launcher icon
         working-directory: camera_webview_source
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('android/app/src/main/AndroidManifest.xml')
-          text = p.read_text(encoding='utf-8')
-          if 'android.permission.INTERNET' not in text:
-              text = text.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />')
-          text = text.replace('<application', '<application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config" android:label="GIT Camera Center"', 1)
-          p.write_text(text, encoding='utf-8')
+          import re
+          import shutil
 
-          xml = Path('android/app/src/main/res/xml')
-          xml.mkdir(parents=True, exist_ok=True)
-          (xml / 'network_security_config.xml').write_text('''<?xml version="1.0" encoding="utf-8"?>\n<network-security-config>\n    <base-config cleartextTrafficPermitted="true" />\n</network-security-config>\n''', encoding='utf-8')
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          text = manifest.read_text(encoding='utf-8')
+
+          if 'android.permission.INTERNET' not in text:
+              text = text.replace(
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />'
+              )
+
+          # Keep one label/icon attribute only.
+          text = re.sub(r'android:label="[^"]*"', 'android:label="GIT Camera Center"', text, count=1)
+          text = re.sub(r'android:icon="[^"]*"', 'android:icon="@mipmap/ic_launcher_custom"', text, count=1)
+
+          if 'android:usesCleartextTraffic=' not in text:
+              text = text.replace('<application', '<application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config"', 1)
+
+          manifest.write_text(text, encoding='utf-8')
+
+          xml_dir = Path('android/app/src/main/res/xml')
+          xml_dir.mkdir(parents=True, exist_ok=True)
+          (xml_dir / 'network_security_config.xml').write_text(
+              '<?xml version="1.0" encoding="utf-8"?>\n'
+              '<network-security-config>\n'
+              '  <base-config cleartextTrafficPermitted="true" />\n'
+              '</network-security-config>\n',
+              encoding='utf-8'
+          )
+
+          # Android accepts JPG drawables/mipmaps. Reuse the supplied icon at every density;
+          # launcher scales/masks it automatically, avoiding the flaky icon-generation plugin.
+          source = Path('assets/git_camera_app_icon.jpg')
+          if not source.exists():
+              raise SystemExit(f'Missing icon: {source}')
+
+          for density in ('mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'):
+              folder = Path(f'android/app/src/main/res/mipmap-{density}')
+              folder.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(source, folder / 'ic_launcher_custom.jpg')
+
+          print('Custom launcher icon installed:', source)
+          print('Manifest icon:', '@mipmap/ic_launcher_custom')
           PY
 
       - name: Get dependencies
         working-directory: camera_webview_source
         run: flutter pub get
-
-      - name: Generate Android launcher icon
-        working-directory: camera_webview_source
-        run: dart run flutter_launcher_icons
 
       - name: Build release APK
         working-directory: camera_webview_source
@@ -60,28 +90,29 @@ jobs:
 
       - name: Prepare APK
         run: |
-          cp camera_webview_source/build/app/outputs/flutter-apk/app-release.apk GIT-Camera-Viewer-v1.2.0-Custom-Icon.apk
-          ls -lh GIT-Camera-Viewer-v1.2.0-Custom-Icon.apk
+          cp camera_webview_source/build/app/outputs/flutter-apk/app-release.apk GIT-Camera-Viewer-v1.2.1-Custom-Icon.apk
+          ls -lh GIT-Camera-Viewer-v1.2.1-Custom-Icon.apk
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GIT-Camera-Viewer-v1.2.0-Custom-Icon
-          path: GIT-Camera-Viewer-v1.2.0-Custom-Icon.apk
+          name: GIT-Camera-Viewer-v1.2.1-Custom-Icon
+          path: GIT-Camera-Viewer-v1.2.1-Custom-Icon.apk
           if-no-files-found: error
 
       - name: Publish release APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="camera-viewer-v1.2.0-custom-icon"
-          APK="GIT-Camera-Viewer-v1.2.0-Custom-Icon.apk"
+          TAG="camera-viewer-v1.2.1-custom-icon"
+          APK="GIT-Camera-Viewer-v1.2.1-Custom-Icon.apk"
+
           if gh release view "$TAG" --repo GIT-96/login_demo >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --repo GIT-96/login_demo --clobber
           else
             gh release create "$TAG" "$APK" \
               --repo GIT-96/login_demo \
               --target build-git-camera-webview-apk \
-              --title "GIT Camera Viewer v1.2.0 Custom Icon" \
-              --notes "Flutter WebView Camera Center app using the custom AI camera launcher icon supplied in ChatGPT. Includes LAN/Remote connectivity from v1.1.0."
+              --title "GIT Camera Viewer v1.2.1 Custom Icon" \
+              --notes "Android Flutter WebView Camera Center app using the supplied custom AI camera icon. Includes Auto/LAN/Remote connectivity and the existing WebView scroll fix."
           fi
