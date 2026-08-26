@@ -1,0 +1,160 @@
+name: Build GIT Camera Viewer APK
+
+on:
+  push:
+    branches:
+      - build-git-camera-webview-apk
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.7'
+          channel: stable
+          cache: true
+
+      - name: Create Android project files
+        working-directory: camera_webview_source
+        run: |
+          flutter create --platforms=android --project-name git_camera_viewer --org com.git .
+
+      - name: Install Pillow for icon generation
+        run: python3 -m pip install --quiet pillow
+
+      - name: Configure Android network and launcher icons
+        working-directory: camera_webview_source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageOps, ImageFile
+          import re
+
+          ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          text = manifest.read_text(encoding='utf-8')
+
+          if 'android.permission.INTERNET' not in text:
+              text = text.replace(
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />'
+              )
+
+          text = re.sub(r'android:label="[^"]*"', 'android:label="GIT Camera Center"', text, count=1)
+          text = re.sub(r'android:icon="[^"]*"', 'android:icon="@mipmap/ic_launcher"', text, count=1)
+
+          if 'android:roundIcon=' in text:
+              text = re.sub(r'android:roundIcon="[^"]*"', 'android:roundIcon="@mipmap/ic_launcher_round"', text, count=1)
+          else:
+              text = text.replace('<application', '<application android:roundIcon="@mipmap/ic_launcher_round"', 1)
+
+          if 'android:usesCleartextTraffic=' not in text:
+              text = text.replace(
+                  '<application',
+                  '<application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config"',
+                  1
+              )
+
+          manifest.write_text(text, encoding='utf-8')
+
+          xml_dir = Path('android/app/src/main/res/xml')
+          xml_dir.mkdir(parents=True, exist_ok=True)
+          (xml_dir / 'network_security_config.xml').write_text(
+              '<?xml version="1.0" encoding="utf-8"?>\n'
+              '<network-security-config>\n'
+              '  <base-config cleartextTrafficPermitted="true" />\n'
+              '</network-security-config>\n',
+              encoding='utf-8'
+          )
+
+          source = Path('assets/git_camera_app_icon.jpg')
+          if not source.exists():
+              raise SystemExit(f'Missing icon: {source}')
+
+          image = Image.open(source).convert('RGB')
+          side = min(image.size)
+          left = (image.width - side) // 2
+          top = (image.height - side) // 2
+          image = image.crop((left, top, left + side, top + side))
+
+          sizes = {
+              'mdpi': 48,
+              'hdpi': 72,
+              'xhdpi': 96,
+              'xxhdpi': 144,
+              'xxxhdpi': 192,
+          }
+
+          for density, size in sizes.items():
+              folder = Path(f'android/app/src/main/res/mipmap-{density}')
+              folder.mkdir(parents=True, exist_ok=True)
+              icon = ImageOps.fit(image, (size, size), method=Image.Resampling.LANCZOS)
+              icon.save(folder / 'ic_launcher.png', format='PNG', optimize=True)
+              icon.save(folder / 'ic_launcher_round.png', format='PNG', optimize=True)
+              icon.save(folder / 'ic_launcher_custom.png', format='PNG', optimize=True)
+
+          for folder_name in ('mipmap-anydpi-v26', 'mipmap-anydpi'):
+              folder = Path(f'android/app/src/main/res/{folder_name}')
+              if folder.exists():
+                  for name in ('ic_launcher.xml', 'ic_launcher_round.xml', 'ic_launcher_custom.xml'):
+                      p = folder / name
+                      if p.exists():
+                          p.unlink()
+
+          print('Launcher icon fixed for legacy + round icon on all densities')
+          print('Manifest icon: @mipmap/ic_launcher')
+          print('Manifest roundIcon: @mipmap/ic_launcher_round')
+          PY
+
+      - name: Get dependencies
+        working-directory: camera_webview_source
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: camera_webview_source
+        run: flutter build apk --release
+
+      - name: Verify custom launcher resources in APK
+        run: |
+          unzip -l camera_webview_source/build/app/outputs/flutter-apk/app-release.apk | grep -E 'ic_launcher|AndroidManifest' || true
+          unzip -p camera_webview_source/build/app/outputs/flutter-apk/app-release.apk resources.arsc | strings | grep -E 'ic_launcher(_round)?' | head -20 || true
+
+      - name: Prepare APK
+        run: |
+          cp camera_webview_source/build/app/outputs/flutter-apk/app-release.apk GIT-Camera-Viewer-v1.2.2-Icon-Fix.apk
+          ls -lh GIT-Camera-Viewer-v1.2.2-Icon-Fix.apk
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GIT-Camera-Viewer-v1.2.2-Icon-Fix
+          path: GIT-Camera-Viewer-v1.2.2-Icon-Fix.apk
+          if-no-files-found: error
+
+      - name: Publish release APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="camera-viewer-v1.2.2-icon-fix"
+          APK="GIT-Camera-Viewer-v1.2.2-Icon-Fix.apk"
+
+          if gh release view "$TAG" --repo GIT-96/login_demo >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --repo GIT-96/login_demo --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --repo GIT-96/login_demo \
+              --target build-git-camera-webview-apk \
+              --title "GIT Camera Viewer v1.2.2 Icon Fix" \
+              --notes "Fixes Android launcher icon on Android 8+ and Samsung/One UI by replacing legacy, round and adaptive/default launcher resources with the supplied AI camera icon. Version code increased so launcher cache is refreshed."
+          fi

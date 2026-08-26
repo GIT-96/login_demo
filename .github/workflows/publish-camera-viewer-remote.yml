@@ -1,0 +1,42 @@
+name: Publish Camera Viewer Remote APK
+
+on:
+  push:
+    branches:
+      - build-git-camera-webview-apk
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download successful APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: GIT-Camera-Viewer-v1.1.0-Remote
+          path: release-apk
+          github-token: ${{ github.token }}
+          repository: GIT-96/login_demo
+          run-id: 32912485732
+
+      - name: Publish GitHub release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="camera-viewer-v1.1.0-remote"
+          APK="release-apk/GIT-Camera-Viewer-v1.1.0-Remote.apk"
+
+          if gh release view "$TAG" --repo GIT-96/login_demo >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --repo GIT-96/login_demo --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --repo GIT-96/login_demo \
+              --target build-git-camera-webview-apk \
+              --title "GIT Camera Viewer v1.1.0 Remote" \
+              --notes "Android WebView viewer with Auto/LAN/Remote connectivity. Configure a reachable Remote URL (Tailscale/VPN or HTTPS public domain) in the app."
+          fi
