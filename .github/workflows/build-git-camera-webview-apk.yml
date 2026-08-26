@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -38,7 +38,7 @@ jobs:
           text = p.read_text(encoding='utf-8')
           if 'android.permission.INTERNET' not in text:
               text = text.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />')
-          text = text.replace('<application', '<application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config"', 1)
+          text = text.replace('<application', '<application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config" android:label="GIT Camera Center"', 1)
           p.write_text(text, encoding='utf-8')
 
           xml = Path('android/app/src/main/res/xml')
@@ -50,17 +50,38 @@ jobs:
         working-directory: camera_webview_source
         run: flutter pub get
 
+      - name: Generate Android launcher icon
+        working-directory: camera_webview_source
+        run: dart run flutter_launcher_icons
+
       - name: Build release APK
         working-directory: camera_webview_source
         run: flutter build apk --release
 
-      - name: Rename APK
+      - name: Prepare APK
         run: |
-          cp camera_webview_source/build/app/outputs/flutter-apk/app-release.apk GIT-Camera-Viewer-v1.1.0-Remote.apk
+          cp camera_webview_source/build/app/outputs/flutter-apk/app-release.apk GIT-Camera-Viewer-v1.2.0-Custom-Icon.apk
+          ls -lh GIT-Camera-Viewer-v1.2.0-Custom-Icon.apk
 
-      - name: Upload APK
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GIT-Camera-Viewer-v1.1.0-Remote
-          path: GIT-Camera-Viewer-v1.1.0-Remote.apk
+          name: GIT-Camera-Viewer-v1.2.0-Custom-Icon
+          path: GIT-Camera-Viewer-v1.2.0-Custom-Icon.apk
           if-no-files-found: error
+
+      - name: Publish release APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="camera-viewer-v1.2.0-custom-icon"
+          APK="GIT-Camera-Viewer-v1.2.0-Custom-Icon.apk"
+          if gh release view "$TAG" --repo GIT-96/login_demo >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --repo GIT-96/login_demo --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --repo GIT-96/login_demo \
+              --target build-git-camera-webview-apk \
+              --title "GIT Camera Viewer v1.2.0 Custom Icon" \
+              --notes "Flutter WebView Camera Center app using the custom AI camera launcher icon supplied in ChatGPT. Includes LAN/Remote connectivity from v1.1.0."
+          fi
