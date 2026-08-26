@@ -37,8 +37,10 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          from PIL import Image, ImageOps
+          from PIL import Image, ImageOps, ImageFile
           import re
+
+          ImageFile.LOAD_TRUNCATED_IMAGES = True
 
           manifest = Path('android/app/src/main/AndroidManifest.xml')
           text = manifest.read_text(encoding='utf-8')
@@ -81,7 +83,6 @@ jobs:
               raise SystemExit(f'Missing icon: {source}')
 
           image = Image.open(source).convert('RGB')
-          # Force square crop from the supplied icon and create real PNG launcher resources.
           side = min(image.size)
           left = (image.width - side) // 2
           top = (image.height - side) // 2
@@ -101,11 +102,8 @@ jobs:
               icon = ImageOps.fit(image, (size, size), method=Image.Resampling.LANCZOS)
               icon.save(folder / 'ic_launcher.png', format='PNG', optimize=True)
               icon.save(folder / 'ic_launcher_round.png', format='PNG', optimize=True)
-              # Keep this alias too, but manifest no longer depends on it.
               icon.save(folder / 'ic_launcher_custom.png', format='PNG', optimize=True)
 
-          # Flutter creates adaptive icon XML on some Android templates. Remove it so
-          # Android 8+ cannot fall back to Flutter's default adaptive foreground.
           for folder_name in ('mipmap-anydpi-v26', 'mipmap-anydpi'):
               folder = Path(f'android/app/src/main/res/{folder_name}')
               if folder.exists():
