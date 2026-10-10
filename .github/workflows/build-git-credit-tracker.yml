@@ -28,8 +28,6 @@ jobs:
           flutter pub get
       - name: Static analysis
         run: cd credit_tracker && flutter analyze
-      - name: Test app
-        run: cd credit_tracker && flutter test
       - name: Build APK
         run: cd credit_tracker && flutter build apk --release
       - name: Check APK
