@@ -23,7 +23,7 @@ jobs:
         run: |
           cd credit_tracker
           flutter create --platforms=android --org com.git96 --project-name git_credit_tracker .
-          python3 tool/make_icon.py
+          python3 tool/icon_fixed.py
           rm -f test/widget_test.dart analysis_options.yaml
           flutter pub get
       - name: Static analysis
