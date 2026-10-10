@@ -1,0 +1,46 @@
+name: Build GIT Credit Tracker APK
+on:
+  push:
+    branches:
+      - build/git-credit-tracker-v1.0.3
+    paths:
+      - 'credit_tracker/**'
+      - '.github/workflows/build-git-credit-tracker.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Prepare Android project
+        run: |
+          cd credit_tracker
+          flutter create --platforms=android --org com.git96 --project-name git_credit_tracker .
+          python3 tool/make_icon.py
+          flutter pub get
+      - name: Static analysis
+        run: cd credit_tracker && flutter analyze
+      - name: Test app
+        run: cd credit_tracker && flutter test
+      - name: Build APK
+        run: cd credit_tracker && flutter build apk --release
+      - name: Check APK
+        run: |
+          test -s credit_tracker/build/app/outputs/flutter-apk/app-release.apk
+          unzip -t credit_tracker/build/app/outputs/flutter-apk/app-release.apk >/dev/null
+          cp credit_tracker/build/app/outputs/flutter-apk/app-release.apk GIT_Credit_Tracker_v1.0.3.apk
+          ls -lh GIT_Credit_Tracker_v1.0.3.apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GIT_Credit_Tracker_v1.0.3
+          path: GIT_Credit_Tracker_v1.0.3.apk
+          if-no-files-found: error
+          retention-days: 7
